@@ -78,7 +78,7 @@ function! s:escape_path(path) abort
   return substitute(fnameescape(a:path), '^\\\~', '\~', '')
 endfunction
 
-function! dispatch#dir_arg(...) abort
+function! dispatch#dir_opt(...) abort
   let dir = fnamemodify(a:0 ? a:1 : getcwd(), ':p:~:s?[^:]\zs[\\/]$??')
   return '-dir=' . s:escape_path(dir) . ' '
 endfunction
@@ -152,12 +152,16 @@ function! dispatch#prepare_start(request, ...) abort
     let exec .= 'sleep 1; '
   endif
   let exec .= a:0 ? a:1 : a:request.expanded
+  let pause = "(printf '\e[1m--- Press ENTER to continue ---\e[0m\\n' $?; exec head -1)"
+  if a:0 < 2 || a:2 =~# 'always\|error\|[1-9]'
+    let exec .= "; test $? = 0 -o $? = 130 || " . pause
+  endif
   let callback = dispatch#callback(a:request)
   let after = 'rm -f ' . a:request.file . '.pid; ' .
         \ 'touch ' . a:request.file . '.complete' .
         \ (empty(callback) ? '' : '; ' . callback)
   if &shellpipe =~# '2>&1'
-    return 'trap ' . shellescape(after) . ' EXIT INT TERM; ' . exec
+    return 'trap : INT; trap ' . shellescape(after) . ' EXIT; ' . exec
   else
     " csh
     return exec . '; ' . after
@@ -166,7 +170,7 @@ endfunction
 
 function! dispatch#prepare_make(request, ...) abort
   let exec = a:0 ? a:1 : (a:request.expanded . dispatch#shellpipe(a:request.file))
-  return dispatch#prepare_start(a:request, exec, 1)
+  return dispatch#prepare_start(a:request, exec, 'never')
 endfunction
 
 function! dispatch#set_title(request) abort
@@ -667,7 +671,7 @@ function! dispatch#focus_command(bang, args, count) abort
     let args = '-compiler=' . opts.compiler . ' ' . args
   endif
   if has_key(opts, 'directory')
-    let args = dispatch#dir_arg(opts.directory) . args
+    let args = dispatch#dir_opt(opts.directory) . args
   endif
   if empty(a:args) && a:bang
     unlet! w:dispatch t:dispatch g:dispatch
