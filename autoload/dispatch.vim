@@ -830,7 +830,7 @@ function! s:cgetfile(request, all, copen) abort
       let &l:efm = request.format
     endif
     let &l:makeprg = request.command
-    call system('sed -i -r -e "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]//g" '
+    call system('sed -i -r -e "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})*)?[mK]//g" '
         \ . fnameescape(request.file))
     silent doautocmd QuickFixCmdPre cgetfile
     execute 'cgetfile '.fnameescape(request.file)
