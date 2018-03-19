@@ -73,6 +73,10 @@ function! s:expand_lnum(string, ...) abort
   endtry
 endfunction
 
+function! s:efm_lookup(key, ...) abort
+  return substitute(matchstr(','.(a:0 ? a:1 : &efm), '\C,%\\&' . a:key . '=\zs\%(\\.\|[^\,]\)*'), '\\\ze[\,]\|%\ze[%f]', '', 'g')
+endfunction
+
 function! s:escape_path(path) abort
   return substitute(fnameescape(a:path), '^\\\~', '\~', '')
 endfunction
@@ -278,8 +282,10 @@ endfunction
 
 function! dispatch#start_command(bang, command) abort
   let command = a:command
-  if empty(command) && type(get(b:, 'start', [])) == type('')
+  if empty(command) && type(get(b:, 'start')) == type('')
     let command = b:start
+  elseif empty(command) && type(get(b:, 'Start')) == type('')
+    let command = b:Start
   endif
   let command = s:expand_lnum(command)
   let [command, opts] = s:extract_opts(command)
@@ -505,6 +511,13 @@ function! dispatch#command_complete(A, L, P) abort
     let as = {'dir': 'directory'}
     let results = filter(['-compiler=', '-dir='],
           \ '!has_key(opts, get(as, v:val[1:-2], v:val[1:-2]))')
+  elseif a:A =~# '^:' && exists('*getcompletion')
+    let matches = matchlist(a:A, '^:\([.$]\|\d\+\)\=\(\a.*\)')
+    if len(matches)
+      let results = map(getcompletion(matches[2], 'command'), '":".matches[1].v:val')
+    else
+      let results = []
+    endif
   elseif a:A =~# '^\%(\w:\|\.\)\=[\/]'
     let results = s:file_complete(a:A)
   else
@@ -539,8 +552,10 @@ function! dispatch#compile_command(bang, args, count) abort
   else
     let args = '_'
     for vars in a:count < 0 ? [b:, g:, t:, w:] : [b:]
-      if has_key(vars, 'dispatch') && type(vars.dispatch) == type('')
+      if type(get(vars, 'dispatch')) == type('')
         let args = vars.dispatch
+      elseif type(get(vars, 'Dispatch')) == type('')
+        let args = vars.Dispatch
       endif
     endfor
   endif
@@ -554,6 +569,7 @@ function! dispatch#compile_command(bang, args, count) abort
   let [args, request] = s:extract_opts(args)
 
   if args =~# '^:\S'
+    call dispatch#autowrite()
     return s:wrapcd(get(request, 'directory', getcwd()),
           \ (a:count > 0 ? a:count : '').substitute(args[1:-1], '\>', (a:bang ? '!' : ''), ''))
   endif
@@ -568,6 +584,9 @@ function! dispatch#compile_command(bang, args, count) abort
 
   if executable ==# '_'
     let request.args = matchstr(args, '_\s*\zs.*')
+    if empty(request.args)
+      let request.args = s:expand_lnum(s:efm_lookup('default'))
+    endif
     let request.program = &makeprg
     if &makeprg =~# '\$\*'
       let request.command = substitute(&makeprg, '\$\*', request.args, 'g')
@@ -697,6 +716,18 @@ function! dispatch#focus(...) abort
   endif
 endfunction
 
+function! s:translate_focus(args) abort
+  if a:args ==# ':Dispatch'
+    return s:expand_lnum(dispatch#focus()[0], 0)
+  elseif a:args =~# '^:[.$]Dispatch$'
+    return dispatch#focus(line(a:args[1]))[0]
+  elseif a:args =~# '^:\d\+Dispatch$'
+    return dispatch#focus(+matchstr(a:args, '\d\+'))[0]
+  else
+    return a:args
+  endif
+endfunction
+
 function! dispatch#focus_command(bang, args, count) abort
   let [args, opts] = s:extract_opts(a:args)
   let args = escape(dispatch#expand(args), '#%')
@@ -714,12 +745,12 @@ function! dispatch#focus_command(bang, args, count) abort
     let [what, why] = dispatch#focus(a:count)
     echo a:count < 0 ? printf('%s is %s', why, what) : what
   elseif a:bang
-    let w:dispatch = args
+    let w:dispatch = s:translate_focus(a:args)
     let [what, why] = dispatch#focus(a:count)
     echo 'Set window local focus to ' . what
   else
+    let g:dispatch = s:translate_focus(a:args)
     unlet! w:dispatch t:dispatch
-    let g:dispatch = args
     let [what, why] = dispatch#focus(a:count)
     echo 'Set global focus to ' . what
   endif
@@ -860,6 +891,9 @@ endfunction
 
 function! s:cgetfile(request, ...) abort
   let request = s:request(a:request)
+  if !has_key(request, 'handler')
+    throw 'Bad request ' . string(request)
+  endif
   let efm = &l:efm
   let makeprg = &l:makeprg
   let compiler = get(b:, 'current_compiler', '')
