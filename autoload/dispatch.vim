@@ -1065,8 +1065,6 @@ function! s:cgetfile(request, ...) abort
       let &l:efm = request.format
     endif
     let &l:makeprg = request.command
-    call system('sed -i -r -e "s/\x1B\[([0-9]{1,2}(;[0-9]{1,2})*)?[mK]//g" '
-        \ . fnameescape(request.file))
     let title = ':Dispatch '.escape(request.expanded, '%#') . ' ' . s:postfix(request)
     silent doautocmd QuickFixCmdPre cgetfile
     if exists(':chistory') && get(getqflist({'title': 1}), 'title', '') ==# title
