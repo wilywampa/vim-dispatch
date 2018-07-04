@@ -762,7 +762,7 @@ function! dispatch#compile_command(bang, args, count) abort
       redraw!
     endif
   finally
-    " silent doautocmd QuickFixCmdPost dispatch-make
+    silent doautocmd QuickFixCmdPost dispatch-make
     let &modelines = modelines
     let &l:efm = efm
     let &l:makeprg = makeprg
